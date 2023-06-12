@@ -1,14 +1,6 @@
 // ----- CONSTANTS -----
 
-var CANVAS_WIDTH = 1440;
-var CANVAS_HEIGHT = 940;
-
-var CROP_LEFT = 141;
-var CROP_TOP = 143;
-var CROP_WIDTH = 1118;
-var CROP_HEIGHT = 668;
-
-var SCALE;
+var WORKER_COUNT = 10;
 
 var DARK_GREEN = [150, 100, 40];
 var LIGHT_GREEN = [107, 70, 88];
@@ -26,11 +18,16 @@ var ROWS = 10;
 var COLS = 17;
 
 var LOAD_SLEEP_INTERVAL = 200;
-var DRAW_SLEEP_INTERVAL = 20;
-var CLICK_SLEEP_INTERVAL = 10;
+var DRAW_SLEEP_INTERVAL = 50;
+var CLICK_SLEEP_INTERVAL = 20;
 
-var TILE_WIDTH = CROP_WIDTH / COLS;
-var TILE_HEIGHT = CROP_HEIGHT / ROWS;
+var CROP_LEFT = 70;
+var CROP_TOP = 71;
+var CROP_WIDTH = 559;
+var CROP_HEIGHT = 334;
+
+var TILE_WIDTH = Math.round(CROP_WIDTH / COLS);
+var TILE_HEIGHT = Math.round(CROP_HEIGHT / ROWS);
 
 // ----- UTIL -----
 
@@ -152,55 +149,80 @@ function postProcess(ctx) {
 async function main() {
     await sleep(LOAD_SLEEP_INTERVAL);
     clickStart();
-    await sleep(LOAD_SLEEP_INTERVAL);
+
+    console.log("LOADING TESSERACT");
+
+    const { createWorker, createScheduler, PSM } = Tesseract;
+
+    const scheduler = createScheduler();
+
+    async function createAndAddWorker() {
+        const worker = await createWorker({
+            workerPath: chrome.runtime.getURL('scripts/lib/worker.min.js'),
+            langPath: chrome.runtime.getURL('traineddata/'),
+            corePath: chrome.runtime.getURL('scripts/lib/tesseract-core-simd.wasm.js'),
+        });
+
+        await worker.loadLanguage('eng');
+        await worker.initialize('eng');
+        await worker.setParameters({
+            tessedit_char_whitelist: '0123456789',
+            tessedit_pageseg_mode: PSM.SINGLE_CHAR
+        });
+
+        return worker;
+    }
+
+    const workers = await Promise.all((new Array(WORKER_COUNT)).fill(0).map((_) => createAndAddWorker()));
+
+    for (const worker of workers)
+        scheduler.addWorker(worker);
 
     console.log("LOADING CANVAS");
     let canvas = document.getElementById("canvas");
-    SCALE = canvas.width / canvas.clientWidth;
-    let ctx = canvas.getContext("2d", { willReadFrequently: true });
 
-    // downloadImage(canvas.toDataURL("image/png").replace("image/png", "image/octet-stream"), "original.png");
+    const scale = canvas.width / canvas.clientWidth;
+
+    CROP_LEFT *= scale;
+    CROP_TOP *= scale;
+    CROP_WIDTH *= scale;
+    CROP_HEIGHT *= scale;
+
+    TILE_WIDTH *= scale;
+    TILE_HEIGHT *= scale;
+
+    let ctx = canvas.getContext("2d", { willReadFrequently: true });
 
     console.log("POST-PROCESSING");
 
     canvas = postProcess(ctx);
 
-    console.log("LOADING TESSERACT");
-
-    const { createWorker } = Tesseract;
-
-    const worker = await createWorker({
-        workerPath: chrome.runtime.getURL('scripts/lib/worker.min.js'),
-        langPath: chrome.runtime.getURL('traineddata/'),
-        corePath: chrome.runtime.getURL('scripts/lib/tesseract-core-simd.wasm.js'),
-    });
-
-    await worker.loadLanguage('eng');
-    await worker.initialize('eng');
-    await worker.setParameters({
-        tessedit_char_whitelist: ' 0123456789',
-    });
-
     console.log("RECOGNIZING");
 
-    const { data: { text } } = await worker.recognize(canvas);
+    const jobs = Promise.all((new Array(170)).fill(0).map((val, i) => {
+        const rectangle = {
+            left: (i % COLS) * TILE_WIDTH,
+            top: (Math.floor(i / COLS)) * TILE_HEIGHT,
+            width: TILE_WIDTH,
+            height: TILE_HEIGHT,
+        };
+        return scheduler.addJob('recognize', canvas, { rectangle });
+    }));
 
-    console.log(text);
+    const results = await jobs;
+    const tilesData = results.map(r => parseInt(r.data.text));
 
-    tilesData = text.replace(/\s+/g, "").split("");
+    CROP_LEFT /= scale;
+    CROP_TOP /= scale;
+    CROP_WIDTH /= scale;
+    CROP_HEIGHT /= scale;
 
-    const length = tilesData.length;
+    TILE_WIDTH /= scale;
+    TILE_HEIGHT /= scale;
 
-    console.log(length);
+    initGame(tilesData);
 
-    if (length === ROWS * COLS) {
-        initGame(tilesData);
-        await solve();
-    } else {
-        console.log("CAN'T SOLVE");
-    }
-
-    await worker.terminate();
+    await scheduler.terminate();
 };
 
 main();
@@ -246,10 +268,10 @@ async function drawRect(row, col, height, width) {
 
     const box = canvas.getBoundingClientRect();
 
-    const startX = box.left + CROP_LEFT / SCALE + TILE_WIDTH * col / SCALE;
-    const startY = box.top + CROP_TOP / SCALE + TILE_HEIGHT * row / SCALE;
-    const endX = startX + TILE_WIDTH * width / SCALE;
-    const endY = startY + TILE_HEIGHT * height / SCALE;
+    const startX = box.left + CROP_LEFT + TILE_WIDTH * col;
+    const startY = box.top + CROP_TOP + TILE_HEIGHT * row;
+    const endX = startX + TILE_WIDTH * width;
+    const endY = startY + TILE_HEIGHT * height;
 
     dispatchMouseEvent(canvas, "mousedown", startX, startY);
     await sleep(CLICK_SLEEP_INTERVAL);
@@ -271,7 +293,7 @@ function initGame(tilesData) {
     for (let row = 0; row < ROWS; row++) {
         tiles.push([]);
         for (let col = 0; col < COLS; col++) {
-            tiles[row][col] = parseInt(tilesData[i++]);
+            tiles[row][col] = tilesData[i++];
         }
     }
 
@@ -328,6 +350,4 @@ async function solve() {
         prevScore = score;
         await loop();
     }
-
-    console.log(drawCounter, loopCounter);
 }
