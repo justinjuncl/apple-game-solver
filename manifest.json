@@ -1,0 +1,32 @@
+{
+    "name": "Apple Game Solver",
+    "version": "1.0",
+    "description": "Apple Game Solver",
+    "manifest_version": 3,
+    "host_permissions": [
+        "<all_urls>"
+    ],
+    "action": {},
+    "permissions": [
+        "activeTab",
+        "scripting"
+    ],
+    "background": {
+        "service_worker": "scripts/service-worker.js"
+    },
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "scripts/lib/tesseract-core-simd.wasm.js",
+                "scripts/lib/tesseract.min.js",
+                "scripts/lib/tesseract.min.js.map",
+                "scripts/lib/worker.min.js",
+                "scripts/lib/worker.min.js.map",
+                "traineddata/eng.traineddata.gz"
+            ],
+            "matches": [
+                "<all_urls>"
+            ]
+        }
+    ]
+}
