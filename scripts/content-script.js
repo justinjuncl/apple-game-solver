@@ -183,13 +183,13 @@ async function main() {
 
     const scale = canvas.width / canvas.clientWidth;
 
-    CROP_LEFT *= scale;
-    CROP_TOP *= scale;
-    CROP_WIDTH *= scale;
-    CROP_HEIGHT *= scale;
+    CROP_LEFT = Math.round(CROP_LEFT * scale);
+    CROP_TOP = Math.round(CROP_TOP * scale);
+    CROP_WIDTH = Math.round(CROP_WIDTH * scale);
+    CROP_HEIGHT = Math.round(CROP_HEIGHT * scale);
 
-    TILE_WIDTH *= scale;
-    TILE_HEIGHT *= scale;
+    TILE_WIDTH = Math.round(TILE_WIDTH * scale);
+    TILE_HEIGHT = Math.round(TILE_HEIGHT * scale);
 
     let ctx = canvas.getContext("2d", { willReadFrequently: true });
 
@@ -212,13 +212,13 @@ async function main() {
     const results = await jobs;
     const tilesData = results.map(r => parseInt(r.data.text));
 
-    CROP_LEFT /= scale;
-    CROP_TOP /= scale;
-    CROP_WIDTH /= scale;
-    CROP_HEIGHT /= scale;
+    CROP_LEFT = Math.round(CROP_LEFT / scale);
+    CROP_TOP = Math.round(CROP_TOP / scale);
+    CROP_WIDTH = Math.round(CROP_WIDTH / scale);
+    CROP_HEIGHT = Math.round(CROP_HEIGHT / scale);
 
-    TILE_WIDTH /= scale;
-    TILE_HEIGHT /= scale;
+    TILE_WIDTH = Math.round(TILE_WIDTH / scale);
+    TILE_HEIGHT = Math.round(TILE_HEIGHT / scale);
 
     initGame(tilesData);
 
