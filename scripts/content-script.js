@@ -1,6 +1,6 @@
 // ----- CONSTANTS -----
 
-var WORKER_COUNT = 10;
+var WORKER_COUNT = 16;
 
 var DARK_GREEN = [150, 100, 40];
 var LIGHT_GREEN = [107, 70, 88];
@@ -18,8 +18,9 @@ var ROWS = 10;
 var COLS = 17;
 
 var LOAD_SLEEP_INTERVAL = 200;
-var DRAW_SLEEP_INTERVAL = 50;
-var CLICK_SLEEP_INTERVAL = 20;
+// var DRAW_SLEEP_INTERVAL = 20;
+// var CLICK_SLEEP_INTERVAL = 20;
+var RESET_SLEEP_INTERVAL = 1000;
 
 var CROP_LEFT = 70;
 var CROP_TOP = 71;
@@ -141,7 +142,7 @@ function postProcess(ctx) {
 
     newCanvas.getContext("2d").putImageData(pixel, 0, 0);
 
-    // downloadImage(newCanvas.toDataURL("image/png").replace("image/png", "image/octet-stream"), "post-process.png");
+    // downloadImage(newCanvas, "post-process.png");
 
     return newCanvas;
 }
@@ -179,6 +180,7 @@ async function main() {
         scheduler.addWorker(worker);
 
     console.log("LOADING CANVAS");
+
     let canvas = document.getElementById("canvas");
 
     const scale = canvas.width / canvas.clientWidth;
@@ -199,7 +201,7 @@ async function main() {
 
     console.log("RECOGNIZING");
 
-    const jobs = Promise.all((new Array(170)).fill(0).map((val, i) => {
+    const results = await Promise.all((new Array(ROWS * COLS)).fill(0).map((val, i) => {
         const rectangle = {
             left: (i % COLS) * TILE_WIDTH,
             top: (Math.floor(i / COLS)) * TILE_HEIGHT,
@@ -209,8 +211,9 @@ async function main() {
         return scheduler.addJob('recognize', canvas, { rectangle });
     }));
 
-    const results = await jobs;
     const tilesData = results.map(r => parseInt(r.data.text));
+
+    await scheduler.terminate();
 
     CROP_LEFT = Math.round(CROP_LEFT / scale);
     CROP_TOP = Math.round(CROP_TOP / scale);
@@ -220,18 +223,28 @@ async function main() {
     TILE_WIDTH = Math.round(TILE_WIDTH / scale);
     TILE_HEIGHT = Math.round(TILE_HEIGHT / scale);
 
-    initGame(tilesData);
+    await initGame(tilesData);
 
-    await scheduler.terminate();
+    await solve();
+
+    await sleep(RESET_SLEEP_INTERVAL);
+
+    clickReset();
 };
 
-main();
+async function start() {
+    while (true) {
+        await main();
+    }
+}
+
+start();
 
 // ----- OUTPUT -----
 
-async function downloadImage(data, filename = 'untitled.png') {
+async function downloadImage(canvas, filename = 'untitled.png') {
     const a = document.createElement('a');
-    a.href = data;
+    a.href = canvas.toDataURL("image/png").replace("image/png", "image/octet-stream");
     a.download = filename;
     document.body.appendChild(a);
     a.click();
@@ -256,8 +269,19 @@ function clickStart() {
     const canvas = document.getElementById("canvas");
 
     const box = canvas.getBoundingClientRect();
-    const coordX = box.left + (box.right - box.left) / 4;
-    const coordY = box.top + (box.bottom - box.top) / 1.9;
+    const coordX = box.left + (box.right - box.left) * 0.25;
+    const coordY = box.top + (box.bottom - box.top) * 0.5;
+
+    dispatchMouseEvent(canvas, "mousedown", coordX, coordY);
+    dispatchMouseEvent(canvas, "mouseup", coordX, coordY);
+}
+
+function clickReset() {
+    const canvas = document.getElementById("canvas");
+
+    const box = canvas.getBoundingClientRect();
+    const coordX = box.left + (box.right - box.left) * 0.1;
+    const coordY = box.top + (box.bottom - box.top) * 0.95;
 
     dispatchMouseEvent(canvas, "mousedown", coordX, coordY);
     dispatchMouseEvent(canvas, "mouseup", coordX, coordY);
@@ -274,9 +298,9 @@ async function drawRect(row, col, height, width) {
     const endY = startY + TILE_HEIGHT * height;
 
     dispatchMouseEvent(canvas, "mousedown", startX, startY);
-    await sleep(CLICK_SLEEP_INTERVAL);
+    // await sleep(CLICK_SLEEP_INTERVAL);
     dispatchMouseEvent(canvas, "mousemove", endX, endY);
-    await sleep(CLICK_SLEEP_INTERVAL);
+    // await sleep(CLICK_SLEEP_INTERVAL);
     dispatchMouseEvent(canvas, "mouseup", endX, endY);
 }
 
@@ -284,10 +308,9 @@ async function drawRect(row, col, height, width) {
 
 var tiles;
 var score;
-var drawCounter;
 var loopCounter;
 
-function initGame(tilesData) {
+async function initGame(tilesData) {
     tiles = [];
     let i = 0
     for (let row = 0; row < ROWS; row++) {
@@ -298,10 +321,7 @@ function initGame(tilesData) {
     }
 
     score = 0;
-    drawCounter = 0;
     loopCounter = 0;
-
-    solve();
 }
 
 async function scan(height, width) {
@@ -326,9 +346,8 @@ async function scan(height, width) {
                 }
 
                 score += count;
-                drawCounter++;
 
-                await sleep(DRAW_SLEEP_INTERVAL);
+                // await sleep(DRAW_SLEEP_INTERVAL);
             }
         }
     }
